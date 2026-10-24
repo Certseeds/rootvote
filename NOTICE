@@ -1,0 +1,17 @@
+rootvote
+Copyright (C) 2026 Certseeds
+License: AGPL-3.0-or-later
+
+This product includes data from the Common CA Database (CCADB):
+  https://github.com/crtsh/ccadb_data
+  Version: v1.20261023.91613
+  License: GPL-3.0
+
+This product includes NSS command-line tools:
+  https://developer.mozilla.org/docs/Mozilla/Projects/NSS
+  License: MPL-2.0
+  Packages:
+    mingw-w64-x86_64-nss
+    mingw-w64-x86_64-nspr
+    mingw-w64-x86_64-sqlite3
+    mingw-w64-x86_64-zlib

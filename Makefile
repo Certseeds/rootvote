@@ -1,11 +1,27 @@
 GO ?= go
 VERSION ?= dev
+COUNTRIES ?= CN
 LDFLAGS := -s -w -X github.com/Certseeds/rootvote/internal/buildinfo.Version=$(VERSION)
 
-.PHONY: build test
+.PHONY: build test generate generate-data generate-nss dist
 
 build:
-	$(GO) build -tags embeddata -trimpath $(LDFLAGS) -o bin/rootvote ./cmd/rootvote
+	$(GO) build -tags embeddata -trimpath -ldflags "$(LDFLAGS)" -o bin/rootvote ./cmd/rootvote
 
 test:
 	$(GO) test ./...
+
+generate: generate-data generate-nss
+
+generate-data:
+	$(GO) run ./tools/fetch-ccadb
+
+generate-nss:
+	$(GO) run ./tools/fetch-nss -lock tools/nss.lock -out dist/tools/nss
+
+dist: generate
+	$(GO) run -tags embeddata ./cmd/rootvote generate --countries $(COUNTRIES) --out dist/blacklist --force
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build -tags embeddata -trimpath -ldflags "$(LDFLAGS)" -o dist/rootvote.exe ./cmd/rootvote
+	cp LICENSE_AGPL_V3_0.md dist/LICENSE
+	cp NOTICE readme.md dist/
+	tar -czf dist/rootvote_$(VERSION)_windows_amd64.tgz -C dist rootvote.exe blacklist tools LICENSE NOTICE readme.md

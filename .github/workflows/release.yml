@@ -1,0 +1,32 @@
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      countries:
+        description: "国家/地区,逗号分隔,例如 CN"
+        required: true
+        default: "CN"
+      version:
+        description: "版本号"
+        required: true
+        default: "0.1.0"
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+      - run: |
+          go run ./tools/fetch-ccadb
+          go run ./tools/fetch-nss -lock tools/nss.lock -out dist/tools/nss
+          go run -tags embeddata ./cmd/rootvote generate --countries "${{ inputs.countries }}" --out dist/blacklist
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags embeddata -trimpath -ldflags "-s -w -X github.com/Certseeds/rootvote/internal/buildinfo.Version=${{ inputs.version }}" -o dist/rootvote.exe ./cmd/rootvote
+          cp LICENSE NOTICE readme.md dist/
+          tar -czf "dist/rootvote_${{ inputs.version }}_windows_amd64.tgz" -C dist rootvote.exe blacklist tools LICENSE NOTICE readme.md
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rootvote-windows-amd64
+          path: dist/rootvote_*.tgz

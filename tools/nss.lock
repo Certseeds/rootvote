@@ -1,0 +1,15 @@
+[[package]]
+url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-nss-3.132-1-any.pkg.tar.zst"
+sha256 = "a9d6820cbd64fca4aff43129b77c958d010ba6c903f3e8af40a2d207be4bcf12"
+
+[[package]]
+url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-nspr-4.40-1-any.pkg.tar.zst"
+sha256 = "878d16da36b5a52ed41644a5a4255b5bc9d7bd55be8e2a8bb0a5b58ecacb39d9"
+
+[[package]]
+url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-sqlite3-3.54.0-1-any.pkg.tar.zst"
+sha256 = "c139c0b99e79a45fbfb563457838d42bc4904dd877ebed2360b9f909914e7546"
+
+[[package]]
+url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-zlib-1.3.2-3-any.pkg.tar.zst"
+sha256 = "ffde6f4ed2d879477c93b37ff14c319baf480a2aeafc065edeceafba26b71e90"
