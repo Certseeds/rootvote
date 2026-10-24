@@ -149,11 +149,20 @@ func forceUndo(ctx context.Context, opts UndoOptions, deps Deps, res *Result) (R
 	}()
 	for _, e := range m.Entries {
 		sum := sha1.Sum(ders[e.SHA256])
-		if opts.DryRun {
-			res.Added++
-			continue
-		}
 		for _, s := range stores {
+			ok, err := s.Contains(sum)
+			if err != nil {
+				res.Failed++
+				fmt.Fprintln(deps.Out, "查询失败:", s.Scope(), e.SHA256, err)
+				continue
+			}
+			if !ok {
+				continue
+			}
+			if opts.DryRun {
+				res.Added++
+				continue
+			}
 			if err := s.Remove(sum); err != nil {
 				res.Failed++
 				fmt.Fprintln(deps.Out, "强制撤销失败:", s.Scope(), e.SHA256, err)
