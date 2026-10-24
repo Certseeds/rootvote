@@ -75,7 +75,11 @@ func (a *app) newRootCmd() *cobra.Command {
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		return codeError(ExitUsage, err)
 	})
-	root.AddCommand(a.newVersionCmd())
+	root.AddCommand(
+		a.newVersionCmd(),
+		a.newCountriesCmd(),
+		a.newGenerateCmd(),
+	)
 	return root
 }
 
