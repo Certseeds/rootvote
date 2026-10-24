@@ -27,9 +27,10 @@ type Manifest struct {
 }
 
 type Filter struct {
-	Countries    []string `json:"countries"`
-	CountryCodes []string `json:"country_codes"`
-	RecordTypes  []string `json:"record_types"`
+	Countries           []string          `json:"countries"`
+	CountryCodes        []string          `json:"country_codes"`
+	RecordTypes         []string          `json:"record_types"`
+	SubjectCountryCodes map[string]string `json:"subject_country_codes,omitempty"`
 }
 
 type Summary struct {

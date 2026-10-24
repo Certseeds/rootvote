@@ -42,7 +42,7 @@ func (a *app) newGenerateCmd() *cobra.Command {
 			return a.runGenerate(countries, rootsOnly, out, force, dataPath)
 		},
 	}
-	cmd.Flags().Var(&countries, "countries", "国家/地区,逗号分隔或重复指定")
+	cmd.Flags().Var(&countries, "countries", "国家/地区,格式 CODE 或 CODE:SUBJECT_C,逗号分隔;例如 CN:CN,IN")
 	cmd.Flags().BoolVar(&rootsOnly, "roots-only", false, "仅纳入根证书")
 	cmd.Flags().StringVar(&out, "out", "./blacklist", "输出目录")
 	cmd.Flags().BoolVar(&force, "force", false, "覆盖已有目录")
@@ -59,17 +59,35 @@ func (a *app) runGenerate(countries multiFlag, rootsOnly bool, out string, force
 	}
 
 	names := make(map[string]bool)
+	subjectByName := make(map[string]string)
 	var codes []string
 	for _, token := range countries {
-		code, ns, err := country.Resolve(token)
+		countryToken := token
+		subjectToken := ""
+		if i := strings.Index(token, ":"); i >= 0 {
+			countryToken = strings.TrimSpace(token[:i])
+			subjectToken = strings.TrimSpace(token[i+1:])
+		}
+		code, ns, err := country.Resolve(countryToken)
 		if err != nil {
 			return codeError(ExitUsage, err)
+		}
+		subjectCode := ""
+		if subjectToken != "" {
+			sc, _, err := country.Resolve(subjectToken)
+			if err != nil {
+				return codeError(ExitUsage, err)
+			}
+			subjectCode = sc
 		}
 		if !contains(codes, code) {
 			codes = append(codes, code)
 		}
 		for _, n := range ns {
 			names[n] = true
+			if subjectCode != "" {
+				subjectByName[n] = subjectCode
+			}
 		}
 	}
 	sort.Strings(codes)
@@ -93,9 +111,10 @@ func (a *app) runGenerate(countries multiFlag, rootsOnly bool, out string, force
 		recordTypes = []string{ccadb.RecordRoot}
 	}
 	filter := manifest.Filter{
-		Countries:    sortedKeys(names),
-		CountryCodes: codes,
-		RecordTypes:  recordTypes,
+		Countries:           sortedKeys(names),
+		CountryCodes:        codes,
+		RecordTypes:         recordTypes,
+		SubjectCountryCodes: subjectByName,
 	}
 	m, certs, err := manifest.Build(filtered, snapshot, "rootvote "+a.deps.Version, filter)
 	if err != nil {

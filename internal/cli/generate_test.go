@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"math/big"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,14 +20,22 @@ import (
 )
 
 func fakeRec(t *testing.T, cn, country, recordType string) ccadb.Record {
+	return fakeRecFull(t, cn, country, "", recordType)
+}
+
+func fakeRecFull(t *testing.T, cn, ownerCountry, subjectCountry, recordType string) ccadb.Record {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
+	name := pkix.Name{CommonName: cn}
+	if subjectCountry != "" {
+		name.Country = []string{subjectCountry}
+	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: cn},
+		Subject:               name,
 		NotBefore:             time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
 		NotAfter:              time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC),
 		IsCA:                  true,
@@ -41,7 +50,7 @@ func fakeRec(t *testing.T, cn, country, recordType string) ccadb.Record {
 	return ccadb.Record{
 		SHA256:     hex.EncodeToString(sum[:]),
 		Owner:      "Owner " + cn,
-		Country:    country,
+		Country:    ownerCountry,
 		CertName:   cn,
 		RecordType: recordType,
 		TLSCapable: true,
@@ -119,5 +128,91 @@ func TestCountriesJSON(t *testing.T) {
 	}
 	if !bytes.Contains(stdout.Bytes(), []byte(`"Japan"`)) {
 		t.Fatalf("stdout = %s", stdout.String())
+	}
+}
+
+func TestGenerateFiltersForeignSubjectCountry(t *testing.T) {
+	records := []ccadb.Record{
+		fakeRecFull(t, "CN Root", "China", "CN", ccadb.RecordRoot),
+		fakeRecFull(t, "US Root", "China", "US", ccadb.RecordRoot),
+		fakeRecFull(t, "GB Root", "China", "GB", ccadb.RecordRoot),
+	}
+	deps := Deps{Version: "test", LoadData: func() ([]ccadb.Record, string, error) {
+		return records, "v1.20260101.000000", nil
+	}}
+	out := filepath.Join(t.TempDir(), "blacklist")
+	var stdout, stderr bytes.Buffer
+	code := RunWithDeps([]string{"generate", "--countries", "CN:CN", "--out", out}, &stdout, &stderr, deps)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr.String())
+	}
+	m, err := manifest.Read(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Summary.Total != 1 {
+		t.Fatalf("total = %d, want 1", m.Summary.Total)
+	}
+	if m.Filter.SubjectCountryCodes["China"] != "CN" {
+		t.Fatalf("subject country codes = %v", m.Filter.SubjectCountryCodes)
+	}
+	if !strings.Contains(m.Entries[0].Subject, "CN Root") {
+		t.Fatalf("subject = %s", m.Entries[0].Subject)
+	}
+}
+
+func TestGenerateNoSubjectFilter(t *testing.T) {
+	records := []ccadb.Record{
+		fakeRecFull(t, "CN Root", "China", "CN", ccadb.RecordRoot),
+		fakeRecFull(t, "US Root", "China", "US", ccadb.RecordRoot),
+	}
+	deps := Deps{Version: "test", LoadData: func() ([]ccadb.Record, string, error) {
+		return records, "v1.20260101.000000", nil
+	}}
+	out := filepath.Join(t.TempDir(), "blacklist")
+	var stdout, stderr bytes.Buffer
+	code := RunWithDeps([]string{"generate", "--countries", "CN", "--out", out}, &stdout, &stderr, deps)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr.String())
+	}
+	m, err := manifest.Read(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Summary.Total != 2 {
+		t.Fatalf("total = %d, want 2", m.Summary.Total)
+	}
+	if len(m.Filter.SubjectCountryCodes) != 0 {
+		t.Fatalf("subject country codes = %v, want empty", m.Filter.SubjectCountryCodes)
+	}
+}
+
+func TestGenerateMixedFilters(t *testing.T) {
+	records := []ccadb.Record{
+		fakeRecFull(t, "CN Root", "China", "CN", ccadb.RecordRoot),
+		fakeRecFull(t, "US Root", "China", "US", ccadb.RecordRoot),
+		fakeRecFull(t, "IN Root", "India", "IN", ccadb.RecordRoot),
+	}
+	deps := Deps{Version: "test", LoadData: func() ([]ccadb.Record, string, error) {
+		return records, "v1.20260101.000000", nil
+	}}
+	out := filepath.Join(t.TempDir(), "blacklist")
+	var stdout, stderr bytes.Buffer
+	code := RunWithDeps([]string{"generate", "--countries", "CN:CN,IN", "--out", out}, &stdout, &stderr, deps)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr.String())
+	}
+	m, err := manifest.Read(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Summary.Total != 2 {
+		t.Fatalf("total = %d, want 2", m.Summary.Total)
+	}
+	if m.Filter.SubjectCountryCodes["China"] != "CN" {
+		t.Fatalf("subject country codes = %v", m.Filter.SubjectCountryCodes)
+	}
+	if _, ok := m.Filter.SubjectCountryCodes["India"]; ok {
+		t.Fatalf("India should not require subject filter: %v", m.Filter.SubjectCountryCodes)
 	}
 }

@@ -45,6 +45,18 @@ func Build(records []ccadb.Record, snapshot, generator string, filter Filter) (*
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: 解析 X.509: %w", r.SHA256, err)
 		}
+		if want := filter.SubjectCountryCodes[r.Country]; want != "" && len(cert.Subject.Country) > 0 {
+			matched := false
+			for _, c := range cert.Subject.Country {
+				if strings.EqualFold(c, want) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		}
 		entries = append(entries, Entry{
 			SHA256:          actual,
 			Subject:         cert.Subject.String(),
