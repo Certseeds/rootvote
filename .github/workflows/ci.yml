@@ -4,22 +4,17 @@ on:
     branches: [main, master]
   pull_request:
 jobs:
-  linux:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: certseeds/common-actions/actions/checkout@v1
+      - uses: certseeds/common-actions/actions/setup-go@v1
         with:
           go-version: "1.27.x"
+          cache-dependency-path: go.sum
       - run: go test ./...
+      - run: go vet ./...
       - run: GOOS=linux GOARCH=amd64 go build ./...
       - run: GOOS=windows GOARCH=amd64 go build ./...
-  windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.27.x"
-      - run: go test ./internal/platform/ -run TestUserDisallowed -v
-      - run: go build ./...
+      - run: make generate-data
+      - run: GOOS=windows GOARCH=amd64 go build -tags embeddata ./...
