@@ -50,6 +50,15 @@ func (c *Certutil) Check(ctx context.Context) error {
 	return nil
 }
 
+const nssTokenPrefix = "NSS Certificate DB:"
+
+func nickCandidates(nick string) []string {
+	if strings.HasPrefix(nick, nssTokenPrefix) {
+		return []string{nick}
+	}
+	return []string{nick, nssTokenPrefix + nick}
+}
+
 func (c *Certutil) run(ctx context.Context, args ...string) ([]byte, []byte, error) {
 	if c.Path == "" {
 		return nil, nil, errors.New("NSS certutil 路径为空")
@@ -92,9 +101,10 @@ func (c *Certutil) HasPrimaryPassword(ctx context.Context, profileDir string) (b
 }
 
 func (c *Certutil) HasNickname(ctx context.Context, profileDir, nick string) (bool, error) {
-	_, _, err := c.run(ctx, "-d", "sql:"+profileDir, "-L", "-n", nick)
-	if err == nil {
-		return true, nil
+	for _, n := range nickCandidates(nick) {
+		if _, _, err := c.run(ctx, "-d", "sql:"+profileDir, "-L", "-n", n); err == nil {
+			return true, nil
+		}
 	}
 	return false, nil
 }
@@ -121,19 +131,27 @@ func (c *Certutil) Add(ctx context.Context, profileDir, nick string, pemBytes []
 }
 
 func (c *Certutil) SetTrust(ctx context.Context, profileDir, nick, trust string) error {
-	_, stderr, err := c.run(ctx, "-d", "sql:"+profileDir, "-M", "-n", nick, "-t", trust)
-	if err != nil {
-		return fmt.Errorf("certutil -M: %w: %s", err, strings.TrimSpace(string(stderr)))
+	var lastErr error
+	for _, n := range nickCandidates(nick) {
+		_, stderr, err := c.run(ctx, "-d", "sql:"+profileDir, "-M", "-n", n, "-t", trust)
+		if err == nil {
+			return nil
+		}
+		lastErr = fmt.Errorf("certutil -M: %w: %s", err, strings.TrimSpace(string(stderr)))
 	}
-	return nil
+	return lastErr
 }
 
 func (c *Certutil) Delete(ctx context.Context, profileDir, nick string) error {
-	_, stderr, err := c.run(ctx, "-d", "sql:"+profileDir, "-D", "-n", nick)
-	if err != nil {
-		return fmt.Errorf("certutil -D: %w: %s", err, strings.TrimSpace(string(stderr)))
+	var lastErr error
+	for _, n := range nickCandidates(nick) {
+		_, stderr, err := c.run(ctx, "-d", "sql:"+profileDir, "-D", "-n", n)
+		if err == nil {
+			return nil
+		}
+		lastErr = fmt.Errorf("certutil -D: %w: %s", err, strings.TrimSpace(string(stderr)))
 	}
-	return nil
+	return lastErr
 }
 
 func (c *Certutil) ListEntries(ctx context.Context, profileDir string) ([]Entry, error) {
@@ -160,9 +178,13 @@ func (c *Certutil) ListEntries(ctx context.Context, profileDir string) ([]Entry,
 }
 
 func (c *Certutil) Export(ctx context.Context, profileDir, nick string) ([]byte, error) {
-	stdout, stderr, err := c.run(ctx, "-d", "sql:"+profileDir, "-L", "-n", nick, "-a")
-	if err != nil {
-		return nil, fmt.Errorf("certutil 导出: %w: %s", err, strings.TrimSpace(string(stderr)))
+	var lastErr error
+	for _, n := range nickCandidates(nick) {
+		stdout, stderr, err := c.run(ctx, "-d", "sql:"+profileDir, "-L", "-n", n, "-a")
+		if err == nil {
+			return stdout, nil
+		}
+		lastErr = fmt.Errorf("certutil 导出: %w: %s", err, strings.TrimSpace(string(stderr)))
 	}
-	return stdout, nil
+	return nil, lastErr
 }

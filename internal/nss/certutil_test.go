@@ -41,6 +41,33 @@ func TestCheckUsesBuildFlags(t *testing.T) {
 	}
 }
 
+func TestNickCandidates(t *testing.T) {
+	short := nickCandidates("rootvote:abc")
+	if len(short) != 2 || short[0] != "rootvote:abc" || short[1] != "NSS Certificate DB:rootvote:abc" {
+		t.Fatalf("short = %v", short)
+	}
+	prefixed := nickCandidates("NSS Certificate DB:rootvote:abc")
+	if len(prefixed) != 1 || prefixed[0] != "NSS Certificate DB:rootvote:abc" {
+		t.Fatalf("prefixed = %v", prefixed)
+	}
+}
+
+func TestListEntriesKeepsTokenPrefix(t *testing.T) {
+	f := &fakeExec{stdout: []byte(strings.Join([]string{
+		"Certificate Nickname                                         Trust Attributes",
+		"                                                             SSL,S/MIME,JAR/XPI",
+		"NSS Certificate DB:rootvote:abc                              p,p,p",
+	}, string(rune(10))))}
+	c := &Certutil{Path: "certutil", Exec: f}
+	entries, err := c.ListEntries(context.Background(), "C:/profile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Nick != "NSS Certificate DB:rootvote:abc" || entries[0].Trust != "p,p,p" {
+		t.Fatalf("entries = %+v", entries)
+	}
+}
+
 func TestHasPrimaryPasswordSet(t *testing.T) {
 	f := &fakeExec{stderr: []byte("Enter Password or Pin for NSS Certificate DB:"), err: context.DeadlineExceeded}
 	c := &Certutil{Path: "certutil", Exec: f}
