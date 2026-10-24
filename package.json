@@ -7,7 +7,6 @@
   "keywords": [],
   "author": "Certseeds",
   "license": "AGPL-3.0-or-later",
-  "packageManager": "pnpm@10.33.4",
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.302"
   }
