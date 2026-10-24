@@ -29,6 +29,18 @@ func TestHasPrimaryPasswordNotSet(t *testing.T) {
 	}
 }
 
+func TestCheckUsesBuildFlags(t *testing.T) {
+	f := &fakeExec{}
+	c := &Certutil{Path: "certutil", Exec: f}
+	if err := c.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(f.calls[0], " ")
+	if !strings.Contains(joined, "--build-flags") {
+		t.Fatalf("args = %s, want --build-flags", joined)
+	}
+}
+
 func TestHasPrimaryPasswordSet(t *testing.T) {
 	f := &fakeExec{stderr: []byte("Enter Password or Pin for NSS Certificate DB:"), err: context.DeadlineExceeded}
 	c := &Certutil{Path: "certutil", Exec: f}

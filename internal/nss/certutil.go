@@ -42,6 +42,14 @@ func New(path string) *Certutil {
 	return &Certutil{Path: path, Timeout: 10 * time.Second, Exec: ExecExecutor{}}
 }
 
+func (c *Certutil) Check(ctx context.Context) error {
+	_, stderr, err := c.run(ctx, "--build-flags")
+	if err != nil {
+		return fmt.Errorf("certutil --build-flags: %w: %s", err, strings.TrimSpace(string(stderr)))
+	}
+	return nil
+}
+
 func (c *Certutil) run(ctx context.Context, args ...string) ([]byte, []byte, error) {
 	if c.Path == "" {
 		return nil, nil, errors.New("NSS certutil 路径为空")

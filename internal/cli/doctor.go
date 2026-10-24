@@ -73,8 +73,12 @@ func (a *app) runDoctor(manifestPath, nssPath string) error {
 	check(statErr == nil, "NSS certutil", path)
 	if statErr == nil {
 		ct := nss.New(path)
-		_, _, runErr := ct.Exec.Run(context.Background(), path, "-H")
-		check(runErr == nil, "NSS certutil 可执行", path)
+		runErr := ct.Check(context.Background())
+		detail := path
+		if runErr != nil {
+			detail = fmt.Sprint(path, " ", runErr)
+		}
+		check(runErr == nil, "NSS certutil 可执行", detail)
 	}
 
 	if dataDir, err := platform.FirefoxDataDir(); err == nil {
