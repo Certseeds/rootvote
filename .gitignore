@@ -651,3 +651,9 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/linux,macos,windows,visualstudiocode,node,go,csharp,dotnetcore
+
+# rootvote build outputs
+/bin/
+/dist/
+/internal/ccadb/data.zst
+/internal/ccadb/snapshot.txt
