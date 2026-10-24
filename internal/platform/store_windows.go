@@ -31,6 +31,11 @@ var (
 	procCertFreeCertificateContext       = crypt32.NewProc("CertFreeCertificateContext")
 )
 
+type cryptHashBlob struct {
+	cbData uint32
+	pbData *byte
+}
+
 type winStore struct {
 	scope Scope
 	h     syscall.Handle
@@ -99,12 +104,13 @@ func Open(scope Scope) ([]Store, error) {
 }
 
 func (s *winStore) Contains(sha1 [20]byte) (bool, error) {
+	blob := cryptHashBlob{cbData: uint32(len(sha1)), pbData: &sha1[0]}
 	ctx, _, callErr := procCertFindCertificateInStore.Call(
 		uintptr(s.h),
 		x509AsnEncoding|pkcs7AsnEncoding,
 		0,
 		certFindSHA1Hash,
-		uintptr(unsafe.Pointer(&sha1[0])),
+		uintptr(unsafe.Pointer(&blob)),
 		0,
 	)
 	if ctx == 0 {
@@ -139,12 +145,13 @@ func (s *winStore) Add(der []byte) error {
 }
 
 func (s *winStore) Remove(sha1 [20]byte) error {
+	blob := cryptHashBlob{cbData: uint32(len(sha1)), pbData: &sha1[0]}
 	ctx, _, callErr := procCertFindCertificateInStore.Call(
 		uintptr(s.h),
 		x509AsnEncoding|pkcs7AsnEncoding,
 		0,
 		certFindSHA1Hash,
-		uintptr(unsafe.Pointer(&sha1[0])),
+		uintptr(unsafe.Pointer(&blob)),
 		0,
 	)
 	if ctx == 0 {

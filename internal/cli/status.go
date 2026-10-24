@@ -88,7 +88,11 @@ func (a *app) runStatus(manifestPath, statePath, nssPath string, asJSON bool) er
 					for _, certDER := range certs {
 						sum := sha1.Sum(certDER)
 						ok, err := stores[0].Contains(sum)
-						if err == nil && ok {
+						if err != nil {
+							st.Error = err.Error()
+							break
+						}
+						if ok {
 							st.Present++
 						}
 					}
