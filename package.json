@@ -1,6 +1,6 @@
 {
   "name": "rootvote",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "rootvote: a cli tool to remove the https certs in Ur windows device",
   "type": "module",
   "private": true,

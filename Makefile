@@ -1,5 +1,5 @@
 GO ?= go
-VERSION ?= dev
+VERSION ?= $(shell node -p "require('./package.json').version")
 COUNTRIES ?= CN:CN,IN
 SNAPSHOT = $(shell cat internal/ccadb/snapshot.txt 2>/dev/null)
 LDFLAGS = -s -w -X github.com/Certseeds/rootvote/internal/buildinfo.Version=$(VERSION) -X github.com/Certseeds/rootvote/internal/buildinfo.CCADBSnapshot=$(SNAPSHOT)
@@ -26,6 +26,10 @@ generate-nss:
 dist: generate
 	$(GO) run -tags embeddata ./cmd/rootvote generate --countries "$(COUNTRIES)" --out dist/blacklist --force
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build -tags embeddata -trimpath -ldflags "$(LDFLAGS)" -o dist/rootvote.exe ./cmd/rootvote
-	cp LICENSE_AGPL_V3_0.md dist/LICENSE
-	cp NOTICE readme.md dist/
-	tar -czf dist/rootvote_$(VERSION)_windows_amd64.tgz -C dist rootvote.exe blacklist tools LICENSE NOTICE readme.md
+	rm -rf "dist/rootvote-$(VERSION)"
+	mkdir -p "dist/rootvote-$(VERSION)"
+	cp dist/rootvote.exe "dist/rootvote-$(VERSION)/"
+	cp -r dist/blacklist dist/tools "dist/rootvote-$(VERSION)/"
+	cp LICENSE_AGPL_V3_0.md "dist/rootvote-$(VERSION)/LICENSE"
+	cp NOTICE readme.md "dist/rootvote-$(VERSION)/"
+	tar -czf "dist/rootvote_$(VERSION)_windows_amd64.tgz" -C dist "rootvote-$(VERSION)"
