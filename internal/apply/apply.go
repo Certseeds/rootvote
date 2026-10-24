@@ -1,9 +1,11 @@
 package apply
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
@@ -11,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Certseeds/rootvote/internal/exitcode"
@@ -188,12 +191,19 @@ func Run(ctx context.Context, opts Options, deps Deps) (Result, error) {
 				}
 				if err := deps.Certutil.Add(ctx, p.Dir, nick, pems[e.SHA256]); err != nil {
 					existingNick, trust, found, findErr := findExistingFirefox(ctx, deps.Certutil, p.Dir, e.SHA256)
+					if (findErr != nil || !found) && isReusedIssuerSerial(err) {
+						existingNick, trust, found, findErr = findExistingFirefoxByIssuerSerial(ctx, deps.Certutil, p.Dir, ders[e.SHA256])
+					}
 					if findErr == nil && found {
+						if isProhibited(trust) {
+							res.Skipped++
+							continue
+						}
 						if setErr := deps.Certutil.SetTrust(ctx, p.Dir, existingNick, "p,p,p"); setErr == nil {
 							res.Added++
 							deps.State.Add(state.Record{
 								Type: "firefox", Profile: p.Dir, SHA256: e.SHA256, Nickname: existingNick,
-								PreviousTrust: trust, ManifestSHA256: manifestHash,
+								Previous: "existing", PreviousTrust: trust, ManifestSHA256: manifestHash,
 								AppliedAt: deps.Now().UTC().Format(time.RFC3339),
 							})
 							continue
@@ -236,6 +246,52 @@ func findExistingFirefox(ctx context.Context, c *nss.Certutil, profileDir, sha s
 		}
 		sum := sha256.Sum256(block.Bytes)
 		if hex.EncodeToString(sum[:]) == sha {
+			return entry.Nick, entry.Trust, true, nil
+		}
+	}
+	return "", "", false, nil
+}
+
+func isReusedIssuerSerial(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "SEC_ERROR_REUSED_ISSUER_AND_SERIAL")
+}
+
+func isProhibited(trust string) bool {
+	parts := strings.Split(trust, ",")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, p := range parts {
+		if strings.TrimSpace(p) != "p" {
+			return false
+		}
+	}
+	return true
+}
+
+func findExistingFirefoxByIssuerSerial(ctx context.Context, c *nss.Certutil, profileDir string, der []byte) (string, string, bool, error) {
+	target, err := x509.ParseCertificate(der)
+	if err != nil {
+		return "", "", false, err
+	}
+	entries, err := c.ListEntries(ctx, profileDir)
+	if err != nil {
+		return "", "", false, err
+	}
+	for _, entry := range entries {
+		pemBytes, err := c.Export(ctx, profileDir, entry.Nick)
+		if err != nil {
+			continue
+		}
+		block, _ := pem.Decode(pemBytes)
+		if block == nil {
+			continue
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			continue
+		}
+		if cert.SerialNumber.Cmp(target.SerialNumber) == 0 && bytes.Equal(cert.RawIssuer, target.RawIssuer) {
 			return entry.Nick, entry.Trust, true, nil
 		}
 	}

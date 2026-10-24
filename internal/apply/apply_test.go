@@ -14,6 +14,7 @@ import (
 	"errors"
 	"math/big"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -178,5 +179,104 @@ func TestRunFirefoxRunning(t *testing.T) {
 	var e *Error
 	if !errors.As(err, &e) || e.Code != exitcode.FirefoxRunning {
 		t.Fatalf("err = %v, want exit code %d", err, exitcode.FirefoxRunning)
+	}
+}
+
+type fakeNSS struct {
+	list   []byte
+	export map[string][]byte
+}
+
+func (f *fakeNSS) Run(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
+	joined := strings.Join(args, " ")
+	if strings.Contains(joined, "-L -n") && strings.Contains(joined, "-a") {
+		for i, a := range args {
+			if a == "-n" && i+1 < len(args) {
+				return f.export[args[i+1]], nil, nil
+			}
+		}
+	}
+	if strings.Contains(joined, "-L") {
+		return f.list, nil, nil
+	}
+	return nil, nil, nil
+}
+
+func makeRoot(t *testing.T) (*x509.Certificate, *rsa.PrivateKey) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Test Root"},
+		NotBefore:             time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:              time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert, key
+}
+
+func makeIntermediate(t *testing.T, root *x509.Certificate, rootKey *rsa.PrivateKey, serial *big.Int, cn string) []byte {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: cn},
+		NotBefore:             time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:              time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, root, &key.PublicKey, rootKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return der
+}
+
+func TestIsProhibited(t *testing.T) {
+	if !isProhibited("p,p,p") {
+		t.Fatal("p,p,p should be prohibited")
+	}
+	if isProhibited(",,") {
+		t.Fatal(",, should not be prohibited")
+	}
+	if isProhibited("C,C,C") {
+		t.Fatal("C,C,C should not be prohibited")
+	}
+}
+
+func TestFindExistingByIssuerSerial(t *testing.T) {
+	root, rootKey := makeRoot(t)
+	target := makeIntermediate(t, root, rootKey, big.NewInt(42), "Target Intermediate")
+	existing := makeIntermediate(t, root, rootKey, big.NewInt(42), "Existing Intermediate")
+	existingPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: existing})
+	fake := &fakeNSS{
+		list:   []byte("Certificate Nickname Trust Attributes\n\nrootvote:old p,p,p\n"),
+		export: map[string][]byte{"rootvote:old": existingPEM},
+	}
+	c := &nss.Certutil{Path: "certutil", Exec: fake}
+	nick, trust, found, err := findExistingFirefoxByIssuerSerial(context.Background(), c, "profile", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || nick != "rootvote:old" || trust != "p,p,p" {
+		t.Fatalf("found=%v nick=%q trust=%q", found, nick, trust)
 	}
 }

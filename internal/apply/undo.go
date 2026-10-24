@@ -104,10 +104,14 @@ func RunUndo(ctx context.Context, opts UndoOptions, deps Deps) (Result, error) {
 		}
 		if r.Type == "firefox" && deps.Certutil != nil {
 			var err error
-			if r.PreviousTrust == "" {
-				err = deps.Certutil.Delete(ctx, r.Profile, r.Nickname)
+			if r.Previous == "existing" || r.PreviousTrust != "" {
+				trust := r.PreviousTrust
+				if trust == "" {
+					trust = ",,"
+				}
+				err = deps.Certutil.SetTrust(ctx, r.Profile, r.Nickname, trust)
 			} else {
-				err = deps.Certutil.SetTrust(ctx, r.Profile, r.Nickname, r.PreviousTrust)
+				err = deps.Certutil.Delete(ctx, r.Profile, r.Nickname)
 			}
 			if err != nil {
 				res.Failed++
