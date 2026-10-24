@@ -80,6 +80,8 @@ func (a *app) newRootCmd() *cobra.Command {
 		a.newCountriesCmd(),
 		a.newGenerateCmd(),
 		a.newDisplayCmd(),
+		a.newApplyCmd(),
+		a.newUndoCmd(),
 		a.newStatusCmd(),
 		a.newDoctorCmd(),
 	)
