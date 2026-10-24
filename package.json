@@ -1,0 +1,14 @@
+{
+  "name": "rootvote",
+  "version": "0.0.1",
+  "description": "rootvote: a cli tool to remove the https certs in Ur windows device",
+  "type": "module",
+  "private": true,
+  "keywords": [],
+  "author": "Certseeds",
+  "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@10.33.4",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^2.1.302"
+  }
+}
