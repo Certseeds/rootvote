@@ -1,7 +1,8 @@
 GO ?= go
 VERSION ?= dev
 COUNTRIES ?= CN
-LDFLAGS := -s -w -X github.com/Certseeds/rootvote/internal/buildinfo.Version=$(VERSION)
+SNAPSHOT = $(shell cat internal/ccadb/snapshot.txt 2>/dev/null)
+LDFLAGS = -s -w -X github.com/Certseeds/rootvote/internal/buildinfo.Version=$(VERSION) -X github.com/Certseeds/rootvote/internal/buildinfo.CCADBSnapshot=$(SNAPSHOT)
 
 .PHONY: build test generate generate-data generate-nss dist
 

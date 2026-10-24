@@ -89,40 +89,26 @@ func Marshal(m *Manifest) ([]byte, error) {
 }
 
 func Write(dir string, m *Manifest, certs map[string][]byte) error {
-	tmp := dir + ".tmp"
-	if err := os.RemoveAll(tmp); err != nil {
+	if err := os.RemoveAll(dir); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(tmp, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	cleanup := func() { os.RemoveAll(tmp) }
 	for sha, pemBytes := range certs {
-		p := certFilePath(tmp, sha)
+		p := certFilePath(dir, sha)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			cleanup()
 			return err
 		}
 		if err := os.WriteFile(p, pemBytes, 0o644); err != nil {
-			cleanup()
 			return err
 		}
 	}
 	b, err := Marshal(m)
 	if err != nil {
-		cleanup()
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(tmp, "manifest.json"), b, 0o644); err != nil {
-		cleanup()
-		return err
-	}
-	if err := os.RemoveAll(dir); err != nil {
-		cleanup()
-		return err
-	}
-	if err := os.Rename(tmp, dir); err != nil {
-		cleanup()
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), b, 0o644); err != nil {
 		return err
 	}
 	return nil
