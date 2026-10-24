@@ -79,6 +79,9 @@ func (a *app) newRootCmd() *cobra.Command {
 		a.newVersionCmd(),
 		a.newCountriesCmd(),
 		a.newGenerateCmd(),
+		a.newDisplayCmd(),
+		a.newStatusCmd(),
+		a.newDoctorCmd(),
 	)
 	return root
 }
