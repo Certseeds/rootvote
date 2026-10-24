@@ -1,12 +1,14 @@
 package cli
 
+import "github.com/Certseeds/rootvote/internal/exitcode"
+
 const (
-	ExitOK                     = 0
-	ExitError                  = 1
-	ExitUsage                  = 2
-	ExitPermission             = 3
-	ExitFirefoxRunning         = 4
-	ExitManifestInvalid        = 5
-	ExitFirefoxPrimaryPassword = 6
-	ExitNSSMissing             = 7
+	ExitOK                     = exitcode.OK
+	ExitError                  = exitcode.Error
+	ExitUsage                  = exitcode.Usage
+	ExitPermission             = exitcode.Permission
+	ExitFirefoxRunning         = exitcode.FirefoxRunning
+	ExitManifestInvalid        = exitcode.ManifestInvalid
+	ExitFirefoxPrimaryPassword = exitcode.FirefoxPrimaryPassword
+	ExitNSSMissing             = exitcode.NSSMissing
 )
