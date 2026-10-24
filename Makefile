@@ -4,17 +4,20 @@ COUNTRIES ?= CN:CN,IN
 SNAPSHOT = $(shell cat internal/ccadb/snapshot.txt 2>/dev/null)
 LDFLAGS = -s -w -X github.com/Certseeds/rootvote/internal/buildinfo.Version=$(VERSION) -X github.com/Certseeds/rootvote/internal/buildinfo.CCADBSnapshot=$(SNAPSHOT)
 
-.PHONY: build test generate generate-data generate-nss dist
+.PHONY: build test deps generate generate-data generate-nss dist
 
 build:
 	$(GO) build -tags embeddata -trimpath -ldflags "$(LDFLAGS)" -o bin/rootvote ./cmd/rootvote
 
-test:
+deps:
+	$(GO) mod download
+
+test: deps
 	$(GO) test ./...
 
 generate: generate-data generate-nss
 
-generate-data:
+generate-data: deps
 	$(GO) run ./tools/fetch-ccadb
 
 generate-nss:
