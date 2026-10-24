@@ -23,7 +23,8 @@ jobs:
       - run: make dist COUNTRIES="${{ inputs.countries }}"
       - run: |
           VERSION="${{ steps.version.outputs.version }}"
-          gh release view "v${VERSION}" >/dev/null 2>&1 || gh release create "v${VERSION}" --generate-notes
-          gh release upload "v${VERSION}" "dist/rootvote_${VERSION}_windows_amd64.tgz" --clobber
+          TAG="v${VERSION}"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes
+          gh release upload "$TAG" "dist/rootvote_${VERSION}_windows_amd64.tgz" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
