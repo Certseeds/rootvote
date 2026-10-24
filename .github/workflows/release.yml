@@ -14,6 +14,8 @@ jobs:
     steps:
       - uses: certseeds/common-actions/actions/checkout@v1
       - uses: certseeds/common-actions/actions/setup-nodejs@v1
+      # setup-node's pnpm cache expects the store path to exist; no pnpm install is needed here.
+      - run: mkdir -p "$(pnpm store path --silent)"
       - uses: certseeds/common-actions/actions/setup-go@v1
         with:
           go-version: "1.27.x"
