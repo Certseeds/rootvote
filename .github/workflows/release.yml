@@ -27,6 +27,9 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           TAG="v${VERSION}"
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes
-          gh release upload "$TAG" "dist/rootvote_${VERSION}_windows_amd64.tgz" --clobber
+          gh release upload "$TAG" \
+            "dist/rootvote_${VERSION}_windows_amd64.tgz" \
+            "dist/rootvote_${VERSION}_linux_amd64.tgz" \
+            --clobber
         env:
           GH_TOKEN: ${{ github.token }}

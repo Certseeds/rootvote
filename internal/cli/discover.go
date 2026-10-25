@@ -21,7 +21,11 @@ func (m *rawMultiFlag) Type() string { return "strings" }
 
 func discoverApp(app nssprofile.App, extra []string) ([]nssprofile.Profile, []string, error) {
 	if app == nssprofile.AppChromium {
-		return nil, nil, fmt.Errorf("当前版本尚不支持 chromium target")
+		dir, err := platform.ChromiumDataDir()
+		if err != nil {
+			return nil, nil, err
+		}
+		return nssprofile.DiscoverChromium(dir, extra)
 	}
 	var (
 		dir string

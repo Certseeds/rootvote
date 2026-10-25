@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -18,11 +19,16 @@ func resolveNSSPath(explicit string) string {
 	if explicit != "" {
 		return explicit
 	}
-	dir, err := platform.ExeDir()
-	if err != nil {
-		return ""
+	if dir, err := platform.ExeDir(); err == nil {
+		p := filepath.Join(dir, "tools", "nss", "certutil"+platform.ExeSuffix())
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
 	}
-	return filepath.Join(dir, "tools", "nss", "certutil"+platform.ExeSuffix())
+	if p, err := exec.LookPath("certutil"); err == nil {
+		return p
+	}
+	return ""
 }
 
 func (a *app) newDoctorCmd() *cobra.Command {

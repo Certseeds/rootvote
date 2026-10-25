@@ -6,7 +6,7 @@ import "testing"
 
 func TestLinuxTargets(t *testing.T) {
 	got := DefaultTargets()
-	want := []string{"firefox", "thunderbird"}
+	want := []string{"firefox", "thunderbird", "chromium"}
 	if len(got) != len(want) {
 		t.Fatalf("targets = %v", got)
 	}
@@ -16,6 +16,9 @@ func TestLinuxTargets(t *testing.T) {
 		}
 	}
 	if err := ValidateTargets(ScopeUser, got); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateTargets(ScopeUser, []string{"chromium"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := ValidateTargets(ScopeUser, []string{"system", "firefox"}); err != nil {

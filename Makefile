@@ -26,10 +26,16 @@ generate-nss:
 dist: generate
 	$(GO) run -tags embeddata ./cmd/rootvote generate --countries "$(COUNTRIES)" --out dist/blacklist --force
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build -tags embeddata -trimpath -ldflags "$(LDFLAGS)" -o dist/rootvote.exe ./cmd/rootvote
-	rm -rf "dist/rootvote-$(VERSION)"
-	mkdir -p "dist/rootvote-$(VERSION)"
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -tags embeddata -trimpath -ldflags "$(LDFLAGS)" -o dist/rootvote-linux ./cmd/rootvote
+	rm -rf "dist/rootvote-$(VERSION)" "dist/rootvote-$(VERSION)-linux-amd64"
+	mkdir -p "dist/rootvote-$(VERSION)" "dist/rootvote-$(VERSION)-linux-amd64"
 	cp dist/rootvote.exe "dist/rootvote-$(VERSION)/"
 	cp -r dist/blacklist dist/tools "dist/rootvote-$(VERSION)/"
 	cp LICENSE_AGPL_V3_0.md "dist/rootvote-$(VERSION)/LICENSE"
 	cp NOTICE readme.md "dist/rootvote-$(VERSION)/"
+	cp dist/rootvote-linux "dist/rootvote-$(VERSION)-linux-amd64/rootvote"
+	cp -r dist/blacklist "dist/rootvote-$(VERSION)-linux-amd64/"
+	cp LICENSE_AGPL_V3_0.md "dist/rootvote-$(VERSION)-linux-amd64/LICENSE"
+	cp NOTICE readme.md "dist/rootvote-$(VERSION)-linux-amd64/"
 	tar -czf "dist/rootvote_$(VERSION)_windows_amd64.tgz" -C dist "rootvote-$(VERSION)"
+	tar -czf "dist/rootvote_$(VERSION)_linux_amd64.tgz" -C dist "rootvote-$(VERSION)-linux-amd64"
