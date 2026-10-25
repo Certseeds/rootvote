@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -62,6 +63,9 @@ func (a *app) runDoctor(manifestPath, nssPath string, cert9Paths rawMultiFlag) e
 		failed++
 		fmt.Fprintln(a.stdout, "[FAIL]", label, detail)
 	}
+	warn := func(label, detail string) {
+		fmt.Fprintln(a.stdout, "[WARN]", label, detail)
+	}
 
 	statePath, err := platform.StatePathForScope(platform.ScopeUser)
 	check(err == nil, "状态文件路径", fmt.Sprint(statePath, err))
@@ -116,14 +120,24 @@ func (a *app) runDoctor(manifestPath, nssPath string, cert9Paths rawMultiFlag) e
 		check(counts[app] > 0, string(app)+" profile", fmt.Sprint(counts[app], " 个"))
 	}
 
-	if stores, err := platform.Open(platform.ScopeUser); err != nil {
-		check(false, "CurrentUser 存储", err.Error())
-	} else {
+	for _, scope := range platform.SystemScopes() {
+		stores, err := platform.Open(scope)
+		label := "存储 " + string(scope)
+		if err != nil {
+			if errors.Is(err, platform.ErrPermission) {
+				warn(label, "需要 root")
+				continue
+			}
+			check(false, label, err.Error())
+			continue
+		}
 		for _, s := range stores {
 			s.Close()
 		}
-		check(true, "CurrentUser 存储", "可访问")
+		check(true, label, "可访问")
 	}
+
+	extraDoctorChecks(check, warn)
 
 	if failed > 0 {
 		return codeError(ExitError, nil)

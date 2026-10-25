@@ -3,6 +3,7 @@
 package platform
 
 import (
+	"crypto/sha1"
 	"errors"
 	"fmt"
 	"syscall"
@@ -103,7 +104,26 @@ func Open(scope Scope) ([]Store, error) {
 	}
 }
 
-func (s *winStore) Contains(sha1 [20]byte) (bool, error) {
+func (s *winStore) Blocked(sum [20]byte) (bool, error) { return s.contains(sum) }
+
+func (s *winStore) Block(der []byte) (BlockResult, error) {
+	sum := sha1.Sum(der)
+	ok, err := s.contains(sum)
+	if err != nil {
+		return BlockResult{}, err
+	}
+	if ok {
+		return BlockResult{}, nil
+	}
+	if err := s.add(der); err != nil {
+		return BlockResult{}, err
+	}
+	return BlockResult{Changed: true}, nil
+}
+
+func (s *winStore) Unblock(sum [20]byte) error { return s.remove(sum) }
+
+func (s *winStore) contains(sha1 [20]byte) (bool, error) {
 	blob := cryptHashBlob{cbData: uint32(len(sha1)), pbData: &sha1[0]}
 	ctx, _, callErr := procCertFindCertificateInStore.Call(
 		uintptr(s.h),
@@ -123,7 +143,7 @@ func (s *winStore) Contains(sha1 [20]byte) (bool, error) {
 	return true, nil
 }
 
-func (s *winStore) Add(der []byte) error {
+func (s *winStore) add(der []byte) error {
 	if len(der) == 0 {
 		return errors.New("空证书")
 	}
@@ -144,7 +164,7 @@ func (s *winStore) Add(der []byte) error {
 	return nil
 }
 
-func (s *winStore) Remove(sha1 [20]byte) error {
+func (s *winStore) remove(sha1 [20]byte) error {
 	blob := cryptHashBlob{cbData: uint32(len(sha1)), pbData: &sha1[0]}
 	ctx, _, callErr := procCertFindCertificateInStore.Call(
 		uintptr(s.h),

@@ -15,11 +15,16 @@ const (
 
 var ErrPermission = errors.New("需要管理员权限")
 
+type BlockResult struct {
+	Changed    bool
+	BackupPath string
+}
+
 type Store interface {
 	Scope() Scope
-	Contains(sha1 [20]byte) (bool, error)
-	Add(der []byte) error
-	Remove(sha1 [20]byte) error
+	Blocked(sha1 [20]byte) (bool, error)
+	Block(der []byte) (BlockResult, error)
+	Unblock(sha1 [20]byte) error
 	Close() error
 }
 

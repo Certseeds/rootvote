@@ -34,17 +34,21 @@ type fakeStore struct {
 
 func (f *fakeStore) Scope() platform.Scope { return f.scope }
 
-func (f *fakeStore) Contains(sha1 [20]byte) (bool, error) {
+func (f *fakeStore) Blocked(sha1 [20]byte) (bool, error) {
 	return f.certs[hex.EncodeToString(sha1[:])], nil
 }
 
-func (f *fakeStore) Add(der []byte) error {
+func (f *fakeStore) Block(der []byte) (platform.BlockResult, error) {
 	sum := sha1.Sum(der)
-	f.certs[hex.EncodeToString(sum[:])] = true
-	return nil
+	key := hex.EncodeToString(sum[:])
+	if f.certs[key] {
+		return platform.BlockResult{}, nil
+	}
+	f.certs[key] = true
+	return platform.BlockResult{Changed: true}, nil
 }
 
-func (f *fakeStore) Remove(sha1 [20]byte) error {
+func (f *fakeStore) Unblock(sha1 [20]byte) error {
 	delete(f.certs, hex.EncodeToString(sha1[:]))
 	return nil
 }

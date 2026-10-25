@@ -35,7 +35,7 @@ func makeDER(t *testing.T) ([]byte, [20]byte) {
 	return der, sha1.Sum(der)
 }
 
-func TestUserDisallowedAddContainsRemove(t *testing.T) {
+func TestUserDisallowedBlockUnblock(t *testing.T) {
 	stores, err := Open(ScopeUser)
 	if err != nil {
 		t.Fatal(err)
@@ -47,26 +47,37 @@ func TestUserDisallowedAddContainsRemove(t *testing.T) {
 	defer s.Close()
 
 	der, sha := makeDER(t)
-	s.Remove(sha)
+	_ = s.Unblock(sha)
 
-	if err := s.Add(der); err != nil {
+	br, err := s.Block(der)
+	if err != nil {
 		t.Fatal(err)
 	}
-	ok, err := s.Contains(sha)
+	if !br.Changed {
+		t.Fatal("want Changed=true on first block")
+	}
+	br, err = s.Block(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if br.Changed {
+		t.Fatal("want Changed=false on duplicate block")
+	}
+	ok, err := s.Blocked(sha)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !ok {
-		t.Fatal("certificate not found after add")
+		t.Fatal("certificate not found after block")
 	}
-	if err := s.Remove(sha); err != nil {
+	if err := s.Unblock(sha); err != nil {
 		t.Fatal(err)
 	}
-	ok, err = s.Contains(sha)
+	ok, err = s.Blocked(sha)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ok {
-		t.Fatal("certificate still present after remove")
+		t.Fatal("certificate still present after unblock")
 	}
 }

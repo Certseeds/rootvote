@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -80,18 +81,22 @@ func (a *app) runStatus(manifestPath, statePath, nssPath string, cert9Paths rawM
 		report.Total = m.Summary.Total
 		certs, err := manifest.LoadCerts(dir)
 		if err == nil {
-			for _, scope := range []platform.Scope{platform.ScopeUser, platform.ScopeMachine} {
+			for _, scope := range platform.SystemScopes() {
 				st := storeStatus{Scope: string(scope), Total: len(certs)}
 				stores, err := platform.Open(scope)
 				if err != nil {
-					st.Error = err.Error()
+					if errors.Is(err, platform.ErrPermission) {
+						st.Error = "需要 root"
+					} else {
+						st.Error = err.Error()
+					}
 					report.Stores = append(report.Stores, st)
 					continue
 				}
 				if len(stores) > 0 {
 					for _, certDER := range certs {
 						sum := sha1.Sum(certDER)
-						ok, err := stores[0].Contains(sum)
+						ok, err := stores[0].Blocked(sum)
 						if err != nil {
 							st.Error = err.Error()
 							break

@@ -25,6 +25,7 @@ type Record struct {
 	AppliedAt      string `json:"applied_at"`
 	Previous       string `json:"previous,omitempty"`
 	PreviousTrust  string `json:"previous_trust,omitempty"`
+	BackupPath     string `json:"backup_path,omitempty"`
 }
 
 func Load(path string) (*State, error) {

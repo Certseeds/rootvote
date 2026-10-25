@@ -3,6 +3,7 @@
 package platform
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -48,5 +49,16 @@ func ChromiumDataDir() (string, error) {
 }
 
 func StatePathForScope(scope Scope) (string, error) {
-	return StatePath()
+	switch scope {
+	case ScopeUser:
+		return StatePath()
+	case ScopeMachine:
+		return filepath.Join("/var/lib/rootvote", "state.json"), nil
+	default:
+		return "", fmt.Errorf("Linux 不支持 --scope all;请分别以 user 和 machine 运行")
+	}
 }
+
+func StateType() string { return "debian" }
+
+func SystemScopes() []Scope { return []Scope{ScopeMachine} }

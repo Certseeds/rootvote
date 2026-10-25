@@ -43,3 +43,7 @@ func ChromiumDataDir() (string, error) {
 func StatePathForScope(scope Scope) (string, error) {
 	return StatePath()
 }
+
+func StateType() string { return "windows" }
+
+func SystemScopes() []Scope { return []Scope{ScopeUser, ScopeMachine} }

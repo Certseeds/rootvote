@@ -96,7 +96,7 @@ func RunUndo(ctx context.Context, opts UndoOptions, deps Deps) (Result, error) {
 			var sum [20]byte
 			copy(sum[:], sha1bytes)
 			for _, s := range stores {
-				if err := s.Remove(sum); err != nil {
+				if err := s.Unblock(sum); err != nil {
 					res.Failed++
 					fmt.Fprintln(deps.Out, "撤销失败:", s.Scope(), r.SHA256, err)
 					remaining = append(remaining, r)
@@ -175,7 +175,7 @@ func forceUndo(ctx context.Context, opts UndoOptions, deps Deps, res *Result) (R
 			for _, e := range m.Entries {
 				sum := sha1.Sum(ders[e.SHA256])
 				for _, s := range stores {
-					ok, err := s.Contains(sum)
+					ok, err := s.Blocked(sum)
 					if err != nil {
 						res.Failed++
 						fmt.Fprintln(deps.Out, "查询失败:", s.Scope(), e.SHA256, err)
@@ -188,7 +188,7 @@ func forceUndo(ctx context.Context, opts UndoOptions, deps Deps, res *Result) (R
 						res.Added++
 						continue
 					}
-					if err := s.Remove(sum); err != nil {
+					if err := s.Unblock(sum); err != nil {
 						res.Failed++
 						fmt.Fprintln(deps.Out, "强制撤销失败:", s.Scope(), e.SHA256, err)
 						continue

@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/Certseeds/rootvote/internal/nssprofile"
 	"github.com/Certseeds/rootvote/internal/platform"
@@ -10,7 +11,7 @@ import (
 
 type rawMultiFlag []string
 
-func (m *rawMultiFlag) String() string { return fmt.Sprint([]string(*m)) }
+func (m *rawMultiFlag) String() string { return strings.Join(*m, ",") }
 
 func (m *rawMultiFlag) Set(v string) error {
 	*m = append(*m, v)

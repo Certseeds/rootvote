@@ -210,37 +210,49 @@ func Run(ctx context.Context, opts Options, deps Deps) (Result, error) {
 			for _, e := range m.Entries {
 				der := ders[e.SHA256]
 				sum := sha1.Sum(der)
-				allPresent := true
+				blockedCount := 0
 				for _, s := range stores {
-					ok, err := s.Contains(sum)
+					ok, err := s.Blocked(sum)
 					if err != nil {
 						tr.Failed++
 						fmt.Fprintln(deps.Out, "查询失败:", s.Scope(), e.SHA256, err)
-						allPresent = false
 						continue
 					}
 					if ok {
-						continue
+						blockedCount++
 					}
-					allPresent = false
-					if opts.DryRun {
-						continue
-					}
-					if err := s.Add(der); err != nil {
+				}
+				if blockedCount == len(stores) {
+					tr.Skipped++
+					continue
+				}
+				if opts.DryRun {
+					tr.Added++
+					continue
+				}
+				changed := false
+				for _, s := range stores {
+					br, err := s.Block(der)
+					if err != nil {
 						tr.Failed++
 						fmt.Fprintln(deps.Out, "添加失败:", s.Scope(), e.SHA256, err)
 						continue
 					}
+					if !br.Changed {
+						continue
+					}
+					changed = true
 					deps.State.Add(state.Record{
-						Type: "windows", Scope: string(s.Scope()), SHA256: e.SHA256,
+						Type: platform.StateType(), Scope: string(s.Scope()), SHA256: e.SHA256,
 						SHA1: hex.EncodeToString(sum[:]), ManifestSHA256: manifestHash,
-						AppliedAt: deps.Now().UTC().Format(time.RFC3339),
+						BackupPath: br.BackupPath,
+						AppliedAt:  deps.Now().UTC().Format(time.RFC3339),
 					})
 				}
-				if allPresent {
-					tr.Skipped++
-				} else {
+				if changed {
 					tr.Added++
+				} else {
+					tr.Skipped++
 				}
 			}
 			res.add(tr)
