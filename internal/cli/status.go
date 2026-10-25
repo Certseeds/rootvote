@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -137,11 +138,7 @@ func (a *app) runStatus(manifestPath, statePath, nssPath string, cert9Paths rawM
 			ps.Error = err.Error()
 		}
 		if entries, err := ct.ListEntries(context.Background(), p.Dir); err == nil {
-			for _, e := range entries {
-				if len(e.Nick) >= len("rootvote:") && e.Nick[:len("rootvote:")] == "rootvote:" {
-					ps.Rootvote++
-				}
-			}
+			ps.Rootvote = countRootvote(entries)
 		}
 		report.Profiles = append(report.Profiles, ps)
 	}
@@ -166,4 +163,14 @@ func (a *app) runStatus(manifestPath, statePath, nssPath string, cert9Paths rawM
 		fmt.Fprintln(a.stdout, "NSS:", p.App, p.Path, "运行中:", p.Running, "主密码:", p.PrimaryPass, "rootvote:", p.Rootvote, p.Error)
 	}
 	return nil
+}
+
+func countRootvote(entries []nss.Entry) int {
+	n := 0
+	for _, e := range entries {
+		if strings.Contains(e.Nick, "rootvote:") {
+			n++
+		}
+	}
+	return n
 }
