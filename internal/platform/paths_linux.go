@@ -30,3 +30,23 @@ func FirefoxDataDir() (string, error) {
 func ExeSuffix() string {
 	return ""
 }
+
+func ThunderbirdDataDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".thunderbird"), nil
+}
+
+func ChromiumDataDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".pki", "nssdb"), nil
+}
+
+func StatePathForScope(scope Scope) (string, error) {
+	return StatePath()
+}

@@ -1,4 +1,4 @@
-package firefox
+package nssprofile
 
 import (
 	"bufio"
@@ -9,13 +9,7 @@ import (
 	"strings"
 )
 
-type Profile struct {
-	Name   string
-	Dir    string
-	CertDB string
-}
-
-func ParseINI(r io.Reader, dataDir string) ([]Profile, error) {
+func ParseINI(r io.Reader, dataDir string, app App) ([]Profile, error) {
 	type section map[string]string
 	var order []string
 	sections := make(map[string]section)
@@ -62,6 +56,7 @@ func ParseINI(r io.Reader, dataDir string) ([]Profile, error) {
 			p = filepath.Join(dataDir, filepath.FromSlash(p))
 		}
 		out = append(out, Profile{
+			App:    app,
 			Name:   sec["Name"],
 			Dir:    p,
 			CertDB: filepath.Join(p, "cert9.db"),
@@ -70,13 +65,11 @@ func ParseINI(r io.Reader, dataDir string) ([]Profile, error) {
 	return out, nil
 }
 
-func Discover(dataDir string, extra []string) ([]Profile, []string, error) {
+func DiscoverGecko(dataDir string, app App, extra []string) ([]Profile, []string, error) {
 	var profiles []Profile
-	var warnings []string
-
 	iniPath := filepath.Join(dataDir, "profiles.ini")
 	if f, err := os.Open(iniPath); err == nil {
-		parsed, err := ParseINI(f, dataDir)
+		parsed, err := ParseINI(f, dataDir, app)
 		f.Close()
 		if err != nil {
 			return nil, nil, err
@@ -86,20 +79,26 @@ func Discover(dataDir string, extra []string) ([]Profile, []string, error) {
 		return nil, nil, err
 	}
 
-	for _, dir := range extra {
-		profiles = append(profiles, Profile{
-			Name:   filepath.Base(dir),
-			Dir:    dir,
-			CertDB: filepath.Join(dir, "cert9.db"),
-		})
+	var explicit []Profile
+	for _, db := range extra {
+		explicit = append(explicit, newProfile(app, db))
 	}
+	return mergeExisting(profiles, explicit)
+}
 
+func mergeExisting(discovered, explicit []Profile) ([]Profile, []string, error) {
+	for _, p := range explicit {
+		if _, err := os.Stat(p.CertDB); err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", p.CertDB, err)
+		}
+	}
 	seen := make(map[string]bool)
 	var out []Profile
-	for _, p := range profiles {
-		abs, err := filepath.Abs(p.Dir)
+	var warnings []string
+	for _, p := range append(discovered, explicit...) {
+		abs, err := filepath.Abs(p.CertDB)
 		if err != nil {
-			abs = p.Dir
+			abs = p.CertDB
 		}
 		if seen[abs] {
 			continue
@@ -114,13 +113,4 @@ func Discover(dataDir string, extra []string) ([]Profile, []string, error) {
 		out = append(out, p)
 	}
 	return out, warnings, nil
-}
-
-func IsRunning(profileDir string) bool {
-	for _, name := range []string{"parent.lock", "lock", ".parentlock"} {
-		if _, err := os.Stat(filepath.Join(profileDir, name)); err == nil {
-			return true
-		}
-	}
-	return false
 }

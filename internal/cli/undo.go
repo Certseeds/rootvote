@@ -4,31 +4,35 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Certseeds/rootvote/internal/apply"
-	"github.com/Certseeds/rootvote/internal/firefox"
 	"github.com/Certseeds/rootvote/internal/nss"
+	"github.com/Certseeds/rootvote/internal/nssprofile"
 	"github.com/Certseeds/rootvote/internal/platform"
 	"github.com/Certseeds/rootvote/internal/state"
 )
 
 func (a *app) newUndoCmd() *cobra.Command {
-	var manifestPath, scopeStr, statePath, nssPath string
-	var firefoxProfiles multiFlag
+	var manifestPath, scopeStr, targetsStr, statePath, nssPath string
+	var cert9Paths, firefoxProfiles rawMultiFlag
 	var all, force, dryRun, yes bool
 	cmd := &cobra.Command{
 		Use:   "undo",
 		Short: "撤销",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runUndo(manifestPath, scopeStr, firefoxProfiles, statePath, nssPath, all, force, dryRun, yes)
+			return a.runUndo(manifestPath, scopeStr, targetsStr, cert9Paths, firefoxProfiles, statePath, nssPath, all, force, dryRun, yes)
 		},
 	}
 	cmd.Flags().StringVar(&manifestPath, "manifest", "", "清单目录")
 	cmd.Flags().StringVar(&scopeStr, "scope", "user", "user/machine/all")
+	cmd.Flags().StringVar(&targetsStr, "targets", "", "强制撤销时使用的 target")
+	cmd.Flags().Var(&cert9Paths, "cert9-path", "追加 <app>:<cert9.db 完整路径>")
 	cmd.Flags().Var(&firefoxProfiles, "firefox-profile", "追加 Firefox profile 目录")
+	_ = cmd.Flags().MarkHidden("firefox-profile")
 	cmd.Flags().StringVar(&statePath, "state", "", "状态文件")
 	cmd.Flags().StringVar(&nssPath, "nss-certutil", "", "NSS certutil 路径")
 	cmd.Flags().BoolVar(&all, "all", false, "撤销所有 rootvote 记录")
@@ -38,7 +42,7 @@ func (a *app) newUndoCmd() *cobra.Command {
 	return cmd
 }
 
-func (a *app) runUndo(manifestPath, scopeStr string, firefoxProfiles multiFlag, statePath, nssPath string, all, force, dryRun, yes bool) error {
+func (a *app) runUndo(manifestPath, scopeStr, targetsStr string, cert9Paths, firefoxProfiles rawMultiFlag, statePath, nssPath string, all, force, dryRun, yes bool) error {
 	if !dryRun && !yes {
 		if !a.deps.IsTTY() {
 			return codeError(ExitUsage, errors.New("非交互环境需要 --yes"))
@@ -48,46 +52,68 @@ func (a *app) runUndo(manifestPath, scopeStr string, firefoxProfiles multiFlag, 
 		}
 	}
 
+	scope, err := platform.ParseScope(scopeStr)
+	if err != nil {
+		return codeError(ExitUsage, err)
+	}
+	targets, err := resolveTargets(targetsStr, "", scope)
+	if err != nil {
+		return codeError(ExitUsage, err)
+	}
+	if err := platform.ValidateTargets(scope, targets); err != nil {
+		return codeError(ExitUsage, err)
+	}
+
 	dir := manifestPath
 	if dir == "" {
 		dir = defaultManifestDir()
 	}
 	sp := statePath
 	if sp == "" {
-		p, err := platform.StatePath()
+		p, err := platform.StatePathForScope(scope)
 		if err != nil {
 			return codeError(ExitError, err)
 		}
 		sp = p
 	}
-	scope, err := platform.ParseScope(scopeStr)
-	if err != nil {
-		return codeError(ExitUsage, err)
-	}
 
 	st, err := state.Load(sp)
 	if err != nil {
+		if os.IsPermission(err) {
+			return codeError(ExitPermission, err)
+		}
 		return codeError(ExitError, err)
 	}
 	certutilPath := resolveNSSPath(nssPath)
+	needsNSS := force && hasNSSApp(targets)
+	for _, r := range st.Applied {
+		if nssprofile.App(r.Type).Valid() {
+			needsNSS = true
+			break
+		}
+	}
+	if needsNSS {
+		if certutilPath == "" {
+			return codeError(ExitNSSMissing, fmt.Errorf("未找到 NSS certutil;Linux 可安装 libnss3-tools"))
+		}
+		if _, err := os.Stat(certutilPath); err != nil {
+			return codeError(ExitNSSMissing, fmt.Errorf("未找到 NSS certutil: %s", certutilPath))
+		}
+	}
 	ad := apply.Deps{
-		OpenStores: platform.Open,
-		DiscoverProfiles: func() ([]firefox.Profile, []string, error) {
-			dataDir, err := platform.FirefoxDataDir()
-			if err != nil {
-				return nil, nil, err
-			}
-			return firefox.Discover(dataDir, firefoxProfiles)
-		},
-		IsRunning: firefox.IsRunning,
-		Certutil:  nss.New(certutilPath),
-		State:     st,
-		Now:       time.Now,
-		Out:       a.stdout,
+		OpenStores:       platform.Open,
+		DiscoverProfiles: discoverApp,
+		IsRunning:        nssprofile.IsRunning,
+		Certutil:         nss.New(certutilPath),
+		State:            st,
+		Now:              time.Now,
+		Out:              a.stdout,
 	}
 	opts := apply.UndoOptions{
 		ManifestDir: dir,
 		Scope:       scope,
+		Targets:     targets,
+		Cert9Paths:  cert9PathsFromFlags(cert9Paths, firefoxProfiles),
 		All:         all,
 		Force:       force,
 		DryRun:      dryRun,
@@ -102,6 +128,9 @@ func (a *app) runUndo(manifestPath, scopeStr string, firefoxProfiles multiFlag, 
 		return codeError(ExitError, err)
 	}
 	fmt.Fprintln(a.stdout, "removed:", res.Added, "failed:", res.Failed)
+	if len(res.SkippedProfiles) > 0 {
+		return codeError(ExitPrimaryPassword, nil)
+	}
 	if res.Failed > 0 {
 		return codeError(ExitError, nil)
 	}

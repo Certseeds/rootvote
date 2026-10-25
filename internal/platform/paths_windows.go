@@ -3,6 +3,7 @@
 package platform
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 )
@@ -25,4 +26,20 @@ func FirefoxDataDir() (string, error) {
 
 func ExeSuffix() string {
 	return ".exe"
+}
+
+func ThunderbirdDataDir() (string, error) {
+	base := os.Getenv("APPDATA")
+	if base == "" {
+		return "", os.ErrNotExist
+	}
+	return filepath.Join(base, "Thunderbird"), nil
+}
+
+func ChromiumDataDir() (string, error) {
+	return "", errors.New("Windows 不使用用户级 NSS")
+}
+
+func StatePathForScope(scope Scope) (string, error) {
+	return StatePath()
 }

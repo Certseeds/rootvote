@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/Certseeds/rootvote/internal/exitcode"
 	"github.com/Certseeds/rootvote/internal/manifest"
+	"github.com/Certseeds/rootvote/internal/nssprofile"
 	"github.com/Certseeds/rootvote/internal/platform"
 	"github.com/Certseeds/rootvote/internal/state"
 )
@@ -18,6 +20,8 @@ import (
 type UndoOptions struct {
 	ManifestDir string
 	Scope       platform.Scope
+	Targets     []string
+	Cert9Paths  []string
 	All         bool
 	Force       bool
 	DryRun      bool
@@ -76,7 +80,7 @@ func RunUndo(ctx context.Context, opts UndoOptions, deps Deps) (Result, error) {
 			remaining = append(remaining, r)
 			continue
 		}
-		if r.Type == "windows" {
+		if r.Type == "windows" || r.Type == "debian" {
 			scope := platform.Scope(r.Scope)
 			stores, ok := storeCache[scope]
 			if !ok {
@@ -102,7 +106,7 @@ func RunUndo(ctx context.Context, opts UndoOptions, deps Deps) (Result, error) {
 			}
 			continue
 		}
-		if r.Type == "firefox" && deps.Certutil != nil {
+		if isNSSApp(r.Type) && deps.Certutil != nil {
 			var err error
 			if r.Previous == "existing" || r.PreviousTrust != "" {
 				trust := r.PreviousTrust
@@ -115,7 +119,7 @@ func RunUndo(ctx context.Context, opts UndoOptions, deps Deps) (Result, error) {
 			}
 			if err != nil {
 				res.Failed++
-				fmt.Fprintln(deps.Out, "Firefox 撤销失败:", r.Profile, r.SHA256, err)
+				fmt.Fprintln(deps.Out, r.Type, "撤销失败:", r.Profile, r.SHA256, err)
 				remaining = append(remaining, r)
 				continue
 			}
@@ -127,6 +131,9 @@ func RunUndo(ctx context.Context, opts UndoOptions, deps Deps) (Result, error) {
 	st.Applied = remaining
 	if !opts.DryRun {
 		if err := st.Save(opts.StatePath); err != nil {
+			if os.IsPermission(err) {
+				return res, &Error{Code: exitcode.Permission, Err: err}
+			}
 			return res, &Error{Code: exitcode.Error, Err: err}
 		}
 	}
@@ -142,37 +149,97 @@ func forceUndo(ctx context.Context, opts UndoOptions, deps Deps, res *Result) (R
 	if err != nil {
 		return *res, &Error{Code: exitcode.ManifestInvalid, Err: err}
 	}
-	stores, err := deps.OpenStores(opts.Scope)
-	if err != nil {
-		return *res, &Error{Code: exitcode.Error, Err: err}
+	if len(opts.Targets) == 0 {
+		opts.Targets = platform.DefaultTargetsForScope(opts.Scope)
 	}
-	defer func() {
-		for _, s := range stores {
-			s.Close()
-		}
-	}()
-	for _, e := range m.Entries {
-		sum := sha1.Sum(ders[e.SHA256])
-		for _, s := range stores {
-			ok, err := s.Contains(sum)
+	opts.Targets = uniqueTargets(opts.Targets)
+	opts.Targets = skipUnsupportedTargets(deps.Out, opts.Targets)
+	extra, err := nssprofile.GroupCert9Paths(opts.Cert9Paths)
+	if err != nil {
+		return *res, &Error{Code: exitcode.Usage, Err: err}
+	}
+	if deps.IsRunning == nil {
+		deps.IsRunning = func(nssprofile.Profile) bool { return false }
+	}
+
+	for _, t := range opts.Targets {
+		switch {
+		case t == TargetSystem:
+			stores, err := deps.OpenStores(opts.Scope)
 			if err != nil {
-				res.Failed++
-				fmt.Fprintln(deps.Out, "查询失败:", s.Scope(), e.SHA256, err)
+				if errors.Is(err, platform.ErrPermission) {
+					return *res, &Error{Code: exitcode.Permission, Err: err}
+				}
+				return *res, &Error{Code: exitcode.Error, Err: err}
+			}
+			for _, e := range m.Entries {
+				sum := sha1.Sum(ders[e.SHA256])
+				for _, s := range stores {
+					ok, err := s.Contains(sum)
+					if err != nil {
+						res.Failed++
+						fmt.Fprintln(deps.Out, "查询失败:", s.Scope(), e.SHA256, err)
+						continue
+					}
+					if !ok {
+						continue
+					}
+					if opts.DryRun {
+						res.Added++
+						continue
+					}
+					if err := s.Remove(sum); err != nil {
+						res.Failed++
+						fmt.Fprintln(deps.Out, "强制撤销失败:", s.Scope(), e.SHA256, err)
+						continue
+					}
+					res.Added++
+				}
+			}
+			for _, s := range stores {
+				s.Close()
+			}
+
+		case isNSSApp(t):
+			if deps.Certutil == nil || deps.DiscoverProfiles == nil {
 				continue
 			}
-			if !ok {
-				continue
+			app := nssprofile.App(t)
+			profiles, warnings, err := deps.DiscoverProfiles(app, extra[app])
+			if err != nil {
+				return *res, &Error{Code: exitcode.Error, Err: err}
 			}
-			if opts.DryRun {
-				res.Added++
-				continue
+			for _, w := range warnings {
+				fmt.Fprintln(deps.Out, "警告:", w)
 			}
-			if err := s.Remove(sum); err != nil {
-				res.Failed++
-				fmt.Fprintln(deps.Out, "强制撤销失败:", s.Scope(), e.SHA256, err)
-				continue
+			for _, p := range profiles {
+				if deps.IsRunning(p) {
+					return *res, &Error{Code: exitcode.AppRunning, Err: fmt.Errorf("%s 正在运行: %s", p.App, p.Dir)}
+				}
+				has, err := deps.Certutil.HasPrimaryPassword(ctx, p.Dir)
+				if has || err != nil {
+					res.SkippedProfiles = append(res.SkippedProfiles, p.ID())
+					fmt.Fprintln(deps.Out, "跳过 profile(主密码):", p.ID())
+					continue
+				}
+				for _, e := range m.Entries {
+					nick := "rootvote:" + e.SHA256[:16]
+					ok, err := deps.Certutil.HasNickname(ctx, p.Dir, nick)
+					if err != nil || !ok {
+						continue
+					}
+					if opts.DryRun {
+						res.Added++
+						continue
+					}
+					if err := deps.Certutil.Delete(ctx, p.Dir, nick); err != nil {
+						res.Failed++
+						fmt.Fprintln(deps.Out, "强制撤销失败:", p.ID(), e.SHA256, err)
+						continue
+					}
+					res.Added++
+				}
 			}
-			res.Added++
 		}
 	}
 	return *res, nil

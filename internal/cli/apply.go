@@ -11,27 +11,31 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Certseeds/rootvote/internal/apply"
-	"github.com/Certseeds/rootvote/internal/firefox"
 	"github.com/Certseeds/rootvote/internal/nss"
+	"github.com/Certseeds/rootvote/internal/nssprofile"
 	"github.com/Certseeds/rootvote/internal/platform"
 	"github.com/Certseeds/rootvote/internal/state"
 )
 
 func (a *app) newApplyCmd() *cobra.Command {
-	var manifestPath, scopeStr, browsersStr, statePath, nssPath string
-	var firefoxProfiles multiFlag
+	var manifestPath, scopeStr, targetsStr, browsersStr, statePath, nssPath string
+	var cert9Paths, firefoxProfiles rawMultiFlag
 	var dryRun, yes, allowEmpty bool
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "应用清单",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runApply(manifestPath, scopeStr, browsersStr, firefoxProfiles, statePath, nssPath, dryRun, yes, allowEmpty)
+			return a.runApply(manifestPath, scopeStr, targetsStr, browsersStr, cert9Paths, firefoxProfiles, statePath, nssPath, dryRun, yes, allowEmpty)
 		},
 	}
 	cmd.Flags().StringVar(&manifestPath, "manifest", "", "清单目录")
 	cmd.Flags().StringVar(&scopeStr, "scope", "user", "user/machine/all")
-	cmd.Flags().StringVar(&browsersStr, "browsers", "system,firefox", "system,firefox")
+	cmd.Flags().StringVar(&targetsStr, "targets", "", "逗号分隔的 target,默认随平台")
+	cmd.Flags().StringVar(&browsersStr, "browsers", "", "已弃用,等价于 --targets")
+	_ = cmd.Flags().MarkHidden("browsers")
+	cmd.Flags().Var(&cert9Paths, "cert9-path", "追加 <app>:<cert9.db 完整路径>")
 	cmd.Flags().Var(&firefoxProfiles, "firefox-profile", "追加 Firefox profile 目录")
+	_ = cmd.Flags().MarkHidden("firefox-profile")
 	cmd.Flags().StringVar(&statePath, "state", "", "状态文件")
 	cmd.Flags().StringVar(&nssPath, "nss-certutil", "", "NSS certutil 路径")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "只显示计划")
@@ -40,7 +44,7 @@ func (a *app) newApplyCmd() *cobra.Command {
 	return cmd
 }
 
-func (a *app) runApply(manifestPath, scopeStr, browsersStr string, firefoxProfiles multiFlag, statePath, nssPath string, dryRun, yes, allowEmpty bool) error {
+func (a *app) runApply(manifestPath, scopeStr, targetsStr, browsersStr string, cert9Paths, firefoxProfiles rawMultiFlag, statePath, nssPath string, dryRun, yes, allowEmpty bool) error {
 	if !dryRun && !yes {
 		if !a.deps.IsTTY() {
 			return codeError(ExitUsage, errors.New("非交互环境需要 --yes"))
@@ -50,35 +54,36 @@ func (a *app) runApply(manifestPath, scopeStr, browsersStr string, firefoxProfil
 		}
 	}
 
+	scope, err := platform.ParseScope(scopeStr)
+	if err != nil {
+		return codeError(ExitUsage, err)
+	}
+	targets, err := resolveTargets(targetsStr, browsersStr, scope)
+	if err != nil {
+		return codeError(ExitUsage, err)
+	}
+	if err := platform.ValidateTargets(scope, targets); err != nil {
+		return codeError(ExitUsage, err)
+	}
+
 	dir := manifestPath
 	if dir == "" {
 		dir = defaultManifestDir()
 	}
 	sp := statePath
 	if sp == "" {
-		p, err := platform.StatePath()
+		p, err := platform.StatePathForScope(scope)
 		if err != nil {
 			return codeError(ExitError, err)
 		}
 		sp = p
 	}
-	scope, err := platform.ParseScope(scopeStr)
-	if err != nil {
-		return codeError(ExitUsage, err)
-	}
-	browsers := splitList(browsersStr)
-	options := apply.Options{
-		ManifestDir:     dir,
-		Scope:           scope,
-		Browsers:        browsers,
-		FirefoxProfiles: firefoxProfiles,
-		StatePath:       sp,
-		DryRun:          dryRun,
-		AllowEmpty:      allowEmpty,
-	}
 
 	certutilPath := resolveNSSPath(nssPath)
-	if containsList(browsers, "firefox") {
+	if hasNSSApp(targets) {
+		if certutilPath == "" {
+			return codeError(ExitNSSMissing, fmt.Errorf("未找到 NSS certutil;Linux 可安装 libnss3-tools"))
+		}
 		if _, err := os.Stat(certutilPath); err != nil {
 			return codeError(ExitNSSMissing, fmt.Errorf("未找到 NSS certutil: %s", certutilPath))
 		}
@@ -86,22 +91,28 @@ func (a *app) runApply(manifestPath, scopeStr, browsersStr string, firefoxProfil
 
 	st, err := state.Load(sp)
 	if err != nil {
+		if os.IsPermission(err) {
+			return codeError(ExitPermission, err)
+		}
 		return codeError(ExitError, err)
 	}
+	options := apply.Options{
+		ManifestDir: dir,
+		Scope:       scope,
+		Targets:     targets,
+		Cert9Paths:  cert9PathsFromFlags(cert9Paths, firefoxProfiles),
+		StatePath:   sp,
+		DryRun:      dryRun,
+		AllowEmpty:  allowEmpty,
+	}
 	ad := apply.Deps{
-		OpenStores: platform.Open,
-		DiscoverProfiles: func() ([]firefox.Profile, []string, error) {
-			dataDir, err := platform.FirefoxDataDir()
-			if err != nil {
-				return nil, nil, err
-			}
-			return firefox.Discover(dataDir, firefoxProfiles)
-		},
-		IsRunning: firefox.IsRunning,
-		Certutil:  nss.New(certutilPath),
-		State:     st,
-		Now:       time.Now,
-		Out:       a.stdout,
+		OpenStores:       platform.Open,
+		DiscoverProfiles: discoverApp,
+		IsRunning:        nssprofile.IsRunning,
+		Certutil:         nss.New(certutilPath),
+		State:            st,
+		Now:              time.Now,
+		Out:              a.stdout,
 	}
 
 	res, err := a.deps.ApplyFunc(context.Background(), options, ad)
@@ -114,12 +125,18 @@ func (a *app) runApply(manifestPath, scopeStr, browsersStr string, firefoxProfil
 	}
 	if !dryRun {
 		if err := st.Save(sp); err != nil {
+			if os.IsPermission(err) {
+				return codeError(ExitPermission, err)
+			}
 			return codeError(ExitError, err)
 		}
 	}
-	fmt.Fprintln(a.stdout, "added:", res.Added, "skipped:", res.Skipped, "failed:", res.Failed)
+	for _, tr := range res.Targets {
+		fmt.Fprintf(a.stdout, "%s: added %d skipped %d failed %d\n", tr.Name, tr.Added, tr.Skipped, tr.Failed)
+	}
+	fmt.Fprintf(a.stdout, "total: added %d skipped %d failed %d\n", res.Added, res.Skipped, res.Failed)
 	if len(res.SkippedProfiles) > 0 {
-		return codeError(ExitFirefoxPrimaryPassword, nil)
+		return codeError(ExitPrimaryPassword, nil)
 	}
 	if res.Failed > 0 {
 		return codeError(ExitError, nil)
@@ -136,13 +153,4 @@ func splitList(s string) []string {
 		}
 	}
 	return out
-}
-
-func containsList(list []string, v string) bool {
-	for _, x := range list {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }
